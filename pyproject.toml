@@ -33,4 +33,4 @@ where = ["."]
 include = ["easylogger*"]
 
 [tool.setuptools.package-data]
-easylogger = ["web/*.html"]
+easylogger = ["web/*.html", "web/*.css", "web/*.jsx"]

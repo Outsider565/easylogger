@@ -120,8 +120,9 @@ easylogger view <root>
 - 提供批量显隐（All visible / All invisible）。
 - 设置列 alias。
 - 新建表达式列。
-- 维护 pinned IDs。
-- 设置其余行排序字段与顺序。
+- 在表格中对任意行执行 Pin / Unpin（不再通过独立 Rows 面板配置）。
+- 对已 pinned 的行支持拖拽调整 pinned 内部顺序。
+- 在表头点击列名切换排序方向（asc / desc），并显示箭头状态。
 - 保存到 view 文件。
 
 ### 6.4 表达式列规则
@@ -132,14 +133,15 @@ easylogger view <root>
 
 ### 6.5 行排序规则
 - `pinned_ids` 对应行固定在最前。
+- pinned 行之间顺序由用户拖拽决定。
 - 其余行按指定字段排序。
+- 排序交互来自表头点击；pinned 行不受普通排序影响。
 - 若排序值为字符串数字（如 `"12"`），自动按数值参与排序。
 
 ### 6.6 约束
 - alias 不允许重名；冲突时禁止保存并报错。
 - hidden 列仍可被表达式列引用。
 - 编辑未保存时离开页面，需要提示（unsaved changes warning）。
-- pinned IDs 文本输入需支持多行换行编辑，不应在输入过程中吞掉换行。
 - 页面在宽屏下应保持自适应布局，避免固定窄宽度导致大量留白。
 
 ## 7. View File Schema (MVP Draft)
@@ -187,6 +189,7 @@ easylogger view <root>
 - `view_engine`：列转换、表达式列、排序/pin
 - `web_api`：前端数据接口（scan、load/save view）
 - `frontend`：表格展示与 view 编辑 UI
+  - 前端资源采用多文件组织（`index.html` + `styles.css` + `app.jsx`），避免单文件过大难维护
 
 ### 8.3 扩展策略
 - 后续数据类型扩展为 parser 插件（先 scaler，后续可新增类型）。
@@ -211,3 +214,4 @@ easylogger view <root>
   - `Save View` 后配置落盘。
   - `unsaved changes` 状态下离开页面提示逻辑。
   - 列配置（alias / hidden / computed）可编辑并持久化。
+  - 表格内的 Pin / Unpin、pinned 拖拽重排、表头排序交互可生效并持久化。

@@ -130,7 +130,7 @@ def test_frontend_save_view_persists_column_configuration(frontend_env, page) ->
 
     headers = page.locator("th").all_inner_texts()
     assert "step" not in headers
-    assert "double_step" in headers
+    assert any(text.startswith("double_step") for text in headers)
 
     persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
     assert persisted["columns"]["alias"]["loss"] == "Loss Score"
@@ -174,31 +174,56 @@ def test_frontend_bulk_visibility_and_drag_reorder(frontend_env, page) -> None:
     _open_app(page, frontend_env["base_url"])
 
     page.get_by_role("button", name="All invisible").click()
-    expect(page.locator("th")).to_have_count(0)
+    expect(page.locator("th")).to_have_count(1)
+    expect(page.locator("th").first).to_have_text("Row")
 
     page.get_by_role("button", name="All visible").click()
     visible_headers = page.locator("th").all_inner_texts()
-    assert "path" in visible_headers
-    assert "loss" in visible_headers
-    assert "step" in visible_headers
+    assert any(text.startswith("path") for text in visible_headers)
+    assert any(text.startswith("loss") for text in visible_headers)
+    assert any(text.startswith("step") for text in visible_headers)
 
     loss_row = page.locator(".column-row", has=page.locator("span.column-name", has_text="loss"))
     path_row = page.locator(".column-row", has=page.locator("span.column-name", has_text="path"))
     loss_row.locator(".drag-handle").drag_to(path_row.locator(".drag-handle"))
 
-    expect(page.locator("th").first).to_have_text("loss")
+    expect(page.locator("th.sortable").first).to_contain_text("loss")
 
     page.get_by_role("button", name="Save View").click()
     persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
     assert persisted["columns"]["order"][0] == "loss"
 
 
-def test_frontend_pinned_ids_supports_multiline_input(frontend_env, page) -> None:
+def test_frontend_table_sort_and_pin_controls(frontend_env, page) -> None:
+    _write(frontend_env["root"] / "logs" / "b.scaler.json", '{"step": 3, "loss": 0.05}')
+    _write(frontend_env["root"] / "logs" / "c.scaler.json", '{"step": 2, "loss": 0.6}')
     _open_app(page, frontend_env["base_url"])
+    page.get_by_role("button", name="Refresh").click()
 
-    pinned = page.locator("textarea")
-    pinned.fill("logs/a.scaler.json\n")
-    assert pinned.input_value().endswith("\n")
+    row_by_path = lambda path: page.locator("tbody tr", has=page.locator("td", has_text=path))
 
-    pinned.type("logs/b.scaler.json")
-    assert "logs/a.scaler.json\nlogs/b.scaler.json" in pinned.input_value()
+    row_by_path("logs/b.scaler.json").get_by_role("button", name="Pin").click()
+    row_by_path("logs/c.scaler.json").get_by_role("button", name="Pin").click()
+
+    row_by_path("logs/c.scaler.json").locator(".row-drag-handle").drag_to(
+        row_by_path("logs/b.scaler.json").locator(".row-drag-handle")
+    )
+
+    step_header = page.locator("th.sortable", has_text="step")
+    step_header.click()
+    step_header.click()
+
+    first_two_paths = page.evaluate(
+        """
+        () => Array.from(document.querySelectorAll('tbody tr'))
+          .slice(0, 2)
+          .map((row) => row.querySelectorAll('td')[1].innerText.trim())
+        """
+    )
+    assert first_two_paths == ["logs/c.scaler.json", "logs/b.scaler.json"]
+
+    page.get_by_role("button", name="Save View").click()
+    persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
+    assert persisted["rows"]["pinned_ids"][:2] == ["logs/c.scaler.json", "logs/b.scaler.json"]
+    assert persisted["rows"]["sort"]["by"] == "step"
+    assert persisted["rows"]["sort"]["direction"] == "desc"

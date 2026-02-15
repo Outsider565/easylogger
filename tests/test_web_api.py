@@ -61,3 +61,7 @@ def test_web_api_serves_index(tmp_path: Path) -> None:
     resp = client.get("/")
     assert resp.status_code == 200
     assert "EasyLogger" in resp.text
+
+    static_resp = client.get("/static/styles.css")
+    assert static_resp.status_code == 200
+    assert "body" in static_resp.text

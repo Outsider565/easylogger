@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .models import ScanRequest, ViewConfig
 from .scanner import scan_records
@@ -16,6 +17,7 @@ def create_app(root: str | Path, view_name: str) -> FastAPI:
     web_root = Path(__file__).resolve().parent / "web"
 
     app = FastAPI(title="EasyLogger")
+    app.mount("/static", StaticFiles(directory=web_root), name="static")
 
     @app.get("/api/meta")
     def get_meta() -> dict[str, str]:

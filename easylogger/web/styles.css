@@ -1,0 +1,294 @@
+      :root {
+        --bg: #f4f8fb;
+        --panel: #ffffff;
+        --line: #d5dde5;
+        --text: #1f2b37;
+        --muted: #5a6775;
+        --accent: #115e59;
+        --danger: #be123c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at top right, #d7f0eb 0, #eef4f9 35%, var(--bg) 100%);
+      }
+
+      .app {
+        width: 100%;
+        margin: 0 auto;
+        padding: clamp(12px, 2vw, 28px);
+        display: grid;
+        gap: 16px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+        box-shadow: 0 6px 20px rgba(12, 29, 45, 0.06);
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        background: #f8fafc;
+        color: var(--text);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .error {
+        color: var(--danger);
+        font-size: 14px;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .grid-two {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+
+      @media (min-width: 1000px) {
+        .grid-two {
+          grid-template-columns: minmax(420px, 0.95fr) minmax(0, 2.05fr);
+        }
+      }
+
+      .column-tools {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .column-grid-head {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 24px minmax(160px, 1fr) 210px 100px;
+        margin-bottom: 6px;
+      }
+
+      .column-row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 24px minmax(160px, 1fr) 210px 100px;
+        align-items: center;
+        border-bottom: 1px dashed #e3e8ee;
+        padding: 8px 0;
+        transition: background 0.2s ease;
+      }
+
+      .column-row.drag-over {
+        background: #e9f6f3;
+      }
+
+      .computed-row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 180px minmax(120px, 1fr) 90px;
+        align-items: center;
+        border-bottom: 1px dashed #e3e8ee;
+        padding: 8px 0;
+      }
+
+      .column-row:last-child,
+      .computed-row:last-child {
+        border-bottom: none;
+      }
+
+      .column-name {
+        font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+        font-size: 13px;
+      }
+
+      .drag-handle {
+        cursor: grab;
+        user-select: none;
+        color: #607080;
+        font-size: 14px;
+        text-align: center;
+      }
+
+      .drag-handle:active {
+        cursor: grabbing;
+      }
+
+      .column-visibility {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        justify-content: flex-start;
+        font-size: 13px;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 14px;
+      }
+
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+        font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+      }
+
+      input[type="checkbox"] {
+        width: auto;
+      }
+
+      .section-title {
+        margin: 0 0 10px;
+        font-size: 15px;
+      }
+
+      .table-wrap {
+        overflow: auto;
+        max-height: 55vh;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 640px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid #ebeff3;
+        padding: 8px;
+        text-align: left;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #f5f8fb;
+        z-index: 1;
+      }
+
+      th.sortable {
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .sort-indicator {
+        display: inline-block;
+        margin-left: 6px;
+        color: #4b5a69;
+        font-size: 12px;
+      }
+
+      .row-controls {
+        width: 86px;
+        min-width: 86px;
+      }
+
+      .row-control-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .pin-toggle {
+        border: 1px solid #b8c4d0;
+        background: #f8fbfd;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .pin-toggle.pinned {
+        border-color: #0f766e;
+        color: #0f766e;
+        background: #e7f8f5;
+      }
+
+      .row-drag-handle {
+        cursor: grab;
+        user-select: none;
+        color: #607080;
+        font-size: 14px;
+      }
+
+      tr.pinned-row td {
+        background: #f1fbfa;
+      }
+
+      tr.pinned-drop-target td {
+        outline: 1px dashed #0f766e;
+        outline-offset: -2px;
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .warning-list {
+        margin: 0;
+        padding-left: 16px;
+        max-height: 150px;
+        overflow: auto;
+      }
+
+      .warning-list li {
+        margin-bottom: 4px;
+        font-size: 12px;
+        color: #495566;
+      }
+
+      .meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .dirty {
+        color: #a16207;
+      }
