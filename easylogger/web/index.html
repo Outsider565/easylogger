@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EasyLogger</title>
+    <style>
+      :root {
+        --bg: #f4f8fb;
+        --panel: #ffffff;
+        --line: #d5dde5;
+        --text: #1f2b37;
+        --muted: #5a6775;
+        --accent: #115e59;
+        --danger: #be123c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at top right, #d7f0eb 0, #eef4f9 35%, var(--bg) 100%);
+      }
+
+      .app {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 20px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+        box-shadow: 0 6px 20px rgba(12, 29, 45, 0.06);
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        background: #f8fafc;
+        color: var(--text);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .error {
+        color: var(--danger);
+        font-size: 14px;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .grid-two {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+
+      @media (min-width: 1000px) {
+        .grid-two {
+          grid-template-columns: 1fr 1.15fr;
+        }
+      }
+
+      .column-row,
+      .computed-row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 1fr auto auto auto 180px;
+        align-items: center;
+        border-bottom: 1px dashed #e3e8ee;
+        padding: 8px 0;
+      }
+
+      .column-row:last-child,
+      .computed-row:last-child {
+        border-bottom: none;
+      }
+
+      .column-name {
+        font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+        font-size: 13px;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 14px;
+      }
+
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+        font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+      }
+
+      .section-title {
+        margin: 0 0 10px;
+        font-size: 15px;
+      }
+
+      .table-wrap {
+        overflow: auto;
+        max-height: 55vh;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 640px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid #ebeff3;
+        padding: 8px;
+        text-align: left;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #f5f8fb;
+        z-index: 1;
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .warning-list {
+        margin: 0;
+        padding-left: 16px;
+        max-height: 150px;
+        overflow: auto;
+      }
+
+      .warning-list li {
+        margin-bottom: 4px;
+        font-size: 12px;
+        color: #495566;
+      }
+
+      .inline-row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 1fr 150px;
+      }
+
+      .meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .dirty {
+        color: #a16207;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useState } = React;
+
+      const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+      const mergeOrder = (configuredOrder, columns) => {
+        const order = [];
+        const seen = new Set();
+        for (const item of configuredOrder || []) {
+          if (!seen.has(item)) {
+            order.push(item);
+            seen.add(item);
+          }
+        }
+        for (const item of columns || []) {
+          if (!seen.has(item)) {
+            order.push(item);
+            seen.add(item);
+          }
+        }
+        return order;
+      };
+
+      function App() {
+        const [meta, setMeta] = useState({ root: "", view_name: "" });
+        const [view, setView] = useState(null);
+        const [scan, setScan] = useState({ rows: [], columns: { all: [], visible: [], alias: {} }, summary: null, warnings: [] });
+        const [loading, setLoading] = useState(true);
+        const [saving, setSaving] = useState(false);
+        const [dirty, setDirty] = useState(false);
+        const [error, setError] = useState("");
+        const [message, setMessage] = useState("");
+
+        useEffect(() => {
+          const handler = (event) => {
+            if (!dirty) {
+              return;
+            }
+            event.preventDefault();
+            event.returnValue = "";
+          };
+          window.addEventListener("beforeunload", handler);
+          return () => window.removeEventListener("beforeunload", handler);
+        }, [dirty]);
+
+        useEffect(() => {
+          loadInitial();
+        }, []);
+
+        const allColumns = useMemo(() => {
+          if (!view) {
+            return [];
+          }
+          const fromScan = scan.columns?.all || [];
+          const fromComputed = (view.columns?.computed || []).map((item) => item.name).filter(Boolean);
+          return mergeOrder(mergeOrder(view.columns?.order || [], fromScan), fromComputed);
+        }, [scan.columns, view]);
+
+        const visibleColumns = useMemo(() => {
+          if (!view) {
+            return [];
+          }
+          const hidden = new Set(view.columns.hidden || []);
+          return allColumns.filter((column) => !hidden.has(column));
+        }, [allColumns, view]);
+
+        async function loadInitial() {
+          setLoading(true);
+          setError("");
+          setMessage("");
+          try {
+            const metaResp = await fetch("/api/meta");
+            if (!metaResp.ok) {
+              throw new Error(await metaResp.text());
+            }
+            const metaPayload = await metaResp.json();
+            setMeta(metaPayload);
+
+            const viewResp = await fetch("/api/view");
+            if (!viewResp.ok) {
+              throw new Error(await viewResp.text());
+            }
+            const viewPayload = await viewResp.json();
+            setView(viewPayload);
+
+            await runScan(viewPayload);
+            setDirty(false);
+          } catch (err) {
+            setError(String(err));
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        async function runScan(activeView = view) {
+          if (!activeView) {
+            return;
+          }
+          setMessage("");
+          setError("");
+          const resp = await fetch("/api/scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ view: activeView }),
+          });
+          if (!resp.ok) {
+            throw new Error(await resp.text());
+          }
+          const payload = await resp.json();
+          setScan(payload);
+        }
+
+        async function refresh() {
+          setLoading(true);
+          try {
+            await runScan(view);
+          } catch (err) {
+            setError(String(err));
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        async function save() {
+          if (!view) {
+            return;
+          }
+          setSaving(true);
+          setMessage("");
+          setError("");
+          try {
+            const resp = await fetch("/api/view", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(view),
+            });
+            if (!resp.ok) {
+              throw new Error(await resp.text());
+            }
+            const saved = await resp.json();
+            setView(saved);
+            setDirty(false);
+            setMessage("View saved.");
+            await runScan(saved);
+          } catch (err) {
+            setError(String(err));
+          } finally {
+            setSaving(false);
+          }
+        }
+
+        function mutateView(mutator) {
+          setView((previous) => {
+            const next = deepClone(previous);
+            mutator(next);
+            return next;
+          });
+          setDirty(true);
+          setMessage("");
+        }
+
+        function moveColumn(index, offset) {
+          const target = index + offset;
+          if (target < 0 || target >= allColumns.length) {
+            return;
+          }
+          const nextOrder = [...allColumns];
+          const [item] = nextOrder.splice(index, 1);
+          nextOrder.splice(target, 0, item);
+          mutateView((draft) => {
+            draft.columns.order = nextOrder;
+          });
+        }
+
+        function toggleHidden(columnName) {
+          mutateView((draft) => {
+            const set = new Set(draft.columns.hidden || []);
+            if (set.has(columnName)) {
+              set.delete(columnName);
+            } else {
+              set.add(columnName);
+            }
+            draft.columns.hidden = Array.from(set);
+          });
+        }
+
+        function setAlias(columnName, aliasValue) {
+          mutateView((draft) => {
+            if (!aliasValue.trim()) {
+              delete draft.columns.alias[columnName];
+              return;
+            }
+            draft.columns.alias[columnName] = aliasValue;
+          });
+        }
+
+        function addComputed() {
+          mutateView((draft) => {
+            draft.columns.computed.push({ name: "", expr: "" });
+          });
+        }
+
+        function removeComputed(index) {
+          mutateView((draft) => {
+            draft.columns.computed.splice(index, 1);
+          });
+        }
+
+        function updateComputed(index, field, value) {
+          mutateView((draft) => {
+            draft.columns.computed[index][field] = value;
+          });
+        }
+
+        function updatePinned(text) {
+          mutateView((draft) => {
+            draft.rows.pinned_ids = text
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean);
+          });
+        }
+
+        function updateSortBy(value) {
+          mutateView((draft) => {
+            draft.rows.sort.by = value || null;
+          });
+        }
+
+        function updateSortDirection(value) {
+          mutateView((draft) => {
+            draft.rows.sort.direction = value;
+          });
+        }
+
+        if (loading && !view) {
+          return <div className="app"><div className="panel">Loading...</div></div>;
+        }
+
+        if (!view) {
+          return <div className="app"><div className="panel error">{error || "Failed to load view."}</div></div>;
+        }
+
+        return (
+          <div className="app">
+            <div className="panel toolbar">
+              <div>
+                <div><strong>EasyLogger</strong></div>
+                <div className="meta">Root: {meta.root}</div>
+                <div className="meta">View: {meta.view_name}</div>
+              </div>
+              <div className="actions">
+                <button onClick={refresh} disabled={loading}>Refresh</button>
+                <button className="primary" onClick={save} disabled={saving}>Save View</button>
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="status">
+                {scan.summary
+                  ? `files=${scan.summary.total_files}, matched=${scan.summary.matched_files}, records=${scan.summary.parsed_records}, warnings=${scan.summary.warning_count}`
+                  : "No scan summary."}
+                {dirty ? <span className="dirty">  |  Unsaved changes</span> : null}
+              </div>
+              {message ? <div className="status">{message}</div> : null}
+              {error ? <div className="error">{error}</div> : null}
+              {scan.warnings?.length ? (
+                <>
+                  <div className="hint">Scan warnings:</div>
+                  <ul className="warning-list">
+                    {scan.warnings.slice(0, 20).map((item, idx) => (
+                      <li key={`${item.path}-${idx}`}>{item.path}: {item.message}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </div>
+
+            <div className="grid-two">
+              <div className="panel">
+                <h3 className="section-title">Columns</h3>
+                {allColumns.map((column, index) => (
+                  <div className="column-row" key={column}>
+                    <span className="column-name">{column}</span>
+                    <button type="button" onClick={() => moveColumn(index, -1)} disabled={index === 0}>↑</button>
+                    <button type="button" onClick={() => moveColumn(index, 1)} disabled={index === allColumns.length - 1}>↓</button>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={!view.columns.hidden.includes(column)}
+                        onChange={() => toggleHidden(column)}
+                      />
+                      visible
+                    </label>
+                    <input
+                      value={view.columns.alias[column] || ""}
+                      placeholder="alias"
+                      onChange={(event) => setAlias(column, event.target.value)}
+                    />
+                  </div>
+                ))}
+
+                <h3 className="section-title">Computed Columns</h3>
+                {(view.columns.computed || []).map((item, index) => (
+                  <div className="computed-row" key={`computed-${index}`}>
+                    <input
+                      value={item.name}
+                      placeholder="name"
+                      onChange={(event) => updateComputed(index, "name", event.target.value)}
+                    />
+                    <input
+                      style={{ gridColumn: "span 3" }}
+                      value={item.expr}
+                      placeholder='row["loss"] * row["step"]'
+                      onChange={(event) => updateComputed(index, "expr", event.target.value)}
+                    />
+                    <button type="button" onClick={() => removeComputed(index)}>Delete</button>
+                  </div>
+                ))}
+                <button type="button" onClick={addComputed}>Add computed column</button>
+
+                <h3 className="section-title">Rows</h3>
+                <div className="inline-row">
+                  <select value={view.rows.sort.by || ""} onChange={(event) => updateSortBy(event.target.value)}>
+                    <option value="">No sort</option>
+                    {allColumns.map((column) => (
+                      <option key={`sort-${column}`} value={column}>{column}</option>
+                    ))}
+                  </select>
+                  <select value={view.rows.sort.direction} onChange={(event) => updateSortDirection(event.target.value)}>
+                    <option value="asc">asc</option>
+                    <option value="desc">desc</option>
+                  </select>
+                </div>
+                <div className="hint">Pinned IDs (one path per line)</div>
+                <textarea
+                  value={(view.rows.pinned_ids || []).join("\n")}
+                  onChange={(event) => updatePinned(event.target.value)}
+                />
+              </div>
+
+              <div className="panel">
+                <h3 className="section-title">Data</h3>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        {visibleColumns.map((column) => (
+                          <th key={`head-${column}`}>{view.columns.alias[column] || column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scan.rows.map((row) => (
+                        <tr key={row.path}>
+                          {visibleColumns.map((column) => {
+                            const value = row[column];
+                            const text = value === null || value === undefined ? "null" : String(value);
+                            return <td key={`${row.path}-${column}`}>{text}</td>;
+                          })}
+                        </tr>
+                      ))}
+                      {!scan.rows.length ? (
+                        <tr>
+                          <td colSpan={Math.max(visibleColumns.length, 1)}>No data. Click Refresh after adding log files.</td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
