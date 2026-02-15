@@ -27,9 +27,9 @@
       }
 
       .app {
-        max-width: 1280px;
+        width: 100%;
         margin: 0 auto;
-        padding: 20px;
+        padding: clamp(12px, 2vw, 28px);
         display: grid;
         gap: 16px;
       }
@@ -95,15 +95,41 @@
 
       @media (min-width: 1000px) {
         .grid-two {
-          grid-template-columns: 1fr 1.15fr;
+          grid-template-columns: minmax(420px, 0.95fr) minmax(0, 2.05fr);
         }
       }
 
-      .column-row,
+      .column-tools {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .column-grid-head {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 24px minmax(160px, 1fr) 210px 100px;
+        margin-bottom: 6px;
+      }
+
+      .column-row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 24px minmax(160px, 1fr) 210px 100px;
+        align-items: center;
+        border-bottom: 1px dashed #e3e8ee;
+        padding: 8px 0;
+        transition: background 0.2s ease;
+      }
+
+      .column-row.drag-over {
+        background: #e9f6f3;
+      }
+
       .computed-row {
         display: grid;
         gap: 8px;
-        grid-template-columns: 1fr auto auto auto 180px;
+        grid-template-columns: 180px minmax(120px, 1fr) 90px;
         align-items: center;
         border-bottom: 1px dashed #e3e8ee;
         padding: 8px 0;
@@ -116,6 +142,26 @@
 
       .column-name {
         font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+        font-size: 13px;
+      }
+
+      .drag-handle {
+        cursor: grab;
+        user-select: none;
+        color: #607080;
+        font-size: 14px;
+        text-align: center;
+      }
+
+      .drag-handle:active {
+        cursor: grabbing;
+      }
+
+      .column-visibility {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        justify-content: flex-start;
         font-size: 13px;
       }
 
@@ -133,6 +179,10 @@
         min-height: 88px;
         resize: vertical;
         font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+      }
+
+      input[type="checkbox"] {
+        width: auto;
       }
 
       .section-title {
@@ -237,6 +287,9 @@
         const [meta, setMeta] = useState({ root: "", view_name: "" });
         const [view, setView] = useState(null);
         const [scan, setScan] = useState({ rows: [], columns: { all: [], visible: [], alias: {} }, summary: null, warnings: [] });
+        const [pinnedText, setPinnedText] = useState("");
+        const [draggingColumn, setDraggingColumn] = useState(null);
+        const [dragOverColumn, setDragOverColumn] = useState(null);
         const [loading, setLoading] = useState(true);
         const [saving, setSaving] = useState(false);
         const [dirty, setDirty] = useState(false);
@@ -294,6 +347,7 @@
             }
             const viewPayload = await viewResp.json();
             setView(viewPayload);
+            setPinnedText((viewPayload.rows?.pinned_ids || []).join("\n"));
 
             await runScan(viewPayload);
             setDirty(false);
@@ -351,6 +405,7 @@
             }
             const saved = await resp.json();
             setView(saved);
+            setPinnedText((saved.rows?.pinned_ids || []).join("\n"));
             setDirty(false);
             setMessage("View saved.");
             await runScan(saved);
@@ -371,14 +426,20 @@
           setMessage("");
         }
 
-        function moveColumn(index, offset) {
-          const target = index + offset;
-          if (target < 0 || target >= allColumns.length) {
+        function reorderColumns(draggedColumn, targetColumn) {
+          if (!draggedColumn || !targetColumn || draggedColumn === targetColumn) {
             return;
           }
+
+          const fromIndex = allColumns.indexOf(draggedColumn);
+          const toIndex = allColumns.indexOf(targetColumn);
+          if (fromIndex < 0 || toIndex < 0) {
+            return;
+          }
+
           const nextOrder = [...allColumns];
-          const [item] = nextOrder.splice(index, 1);
-          nextOrder.splice(target, 0, item);
+          const [item] = nextOrder.splice(fromIndex, 1);
+          nextOrder.splice(toIndex, 0, item);
           mutateView((draft) => {
             draft.columns.order = nextOrder;
           });
@@ -406,6 +467,12 @@
           });
         }
 
+        function setAllVisibility(visible) {
+          mutateView((draft) => {
+            draft.columns.hidden = visible ? [] : [...allColumns];
+          });
+        }
+
         function addComputed() {
           mutateView((draft) => {
             draft.columns.computed.push({ name: "", expr: "" });
@@ -424,13 +491,28 @@
           });
         }
 
-        function updatePinned(text) {
+        function updatePinnedText(text) {
+          setPinnedText(text);
           mutateView((draft) => {
             draft.rows.pinned_ids = text
               .split("\n")
               .map((line) => line.trim())
               .filter(Boolean);
           });
+        }
+
+        function onColumnDragStart(event, column) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", column);
+          setDraggingColumn(column);
+        }
+
+        function onColumnDrop(event, targetColumn) {
+          event.preventDefault();
+          const draggedFromData = event.dataTransfer.getData("text/plain");
+          reorderColumns(draggedFromData || draggingColumn, targetColumn);
+          setDraggingColumn(null);
+          setDragOverColumn(null);
         }
 
         function updateSortBy(value) {
@@ -491,12 +573,52 @@
             <div className="grid-two">
               <div className="panel">
                 <h3 className="section-title">Columns</h3>
-                {allColumns.map((column, index) => (
-                  <div className="column-row" key={column}>
+                <div className="column-tools">
+                  <button type="button" onClick={() => setAllVisibility(true)}>All visible</button>
+                  <button type="button" onClick={() => setAllVisibility(false)}>All invisible</button>
+                </div>
+                <div className="column-grid-head hint">
+                  <span>#</span>
+                  <span>Column</span>
+                  <span>Alias</span>
+                  <span>Visible</span>
+                </div>
+                {allColumns.map((column) => (
+                  <div
+                    className={`column-row ${dragOverColumn === column ? "drag-over" : ""}`}
+                    key={column}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (column !== draggingColumn) {
+                        setDragOverColumn(column);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverColumn === column) {
+                        setDragOverColumn(null);
+                      }
+                    }}
+                    onDrop={(event) => onColumnDrop(event, column)}
+                  >
+                    <span
+                      className="drag-handle"
+                      title="Drag to reorder"
+                      draggable
+                      onDragStart={(event) => onColumnDragStart(event, column)}
+                      onDragEnd={() => {
+                        setDraggingColumn(null);
+                        setDragOverColumn(null);
+                      }}
+                    >
+                      ⋮⋮
+                    </span>
                     <span className="column-name">{column}</span>
-                    <button type="button" onClick={() => moveColumn(index, -1)} disabled={index === 0}>↑</button>
-                    <button type="button" onClick={() => moveColumn(index, 1)} disabled={index === allColumns.length - 1}>↓</button>
-                    <label>
+                    <input
+                      value={view.columns.alias[column] || ""}
+                      placeholder="alias"
+                      onChange={(event) => setAlias(column, event.target.value)}
+                    />
+                    <label className="column-visibility">
                       <input
                         type="checkbox"
                         checked={!view.columns.hidden.includes(column)}
@@ -504,11 +626,6 @@
                       />
                       visible
                     </label>
-                    <input
-                      value={view.columns.alias[column] || ""}
-                      placeholder="alias"
-                      onChange={(event) => setAlias(column, event.target.value)}
-                    />
                   </div>
                 ))}
 
@@ -521,7 +638,6 @@
                       onChange={(event) => updateComputed(index, "name", event.target.value)}
                     />
                     <input
-                      style={{ gridColumn: "span 3" }}
                       value={item.expr}
                       placeholder='row["loss"] * row["step"]'
                       onChange={(event) => updateComputed(index, "expr", event.target.value)}
@@ -546,8 +662,8 @@
                 </div>
                 <div className="hint">Pinned IDs (one path per line)</div>
                 <textarea
-                  value={(view.rows.pinned_ids || []).join("\n")}
-                  onChange={(event) => updatePinned(event.target.value)}
+                  value={pinnedText}
+                  onChange={(event) => updatePinnedText(event.target.value)}
                 />
               </div>
 

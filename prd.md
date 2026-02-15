@@ -115,8 +115,9 @@ easylogger view <root>
 - 用户手动点击 Refresh 才重新扫描。
 
 ### 6.3 View 编辑能力
-- 调整列顺序。
+- 调整列顺序（支持拖拽排序）。
 - 隐藏/显示列。
+- 提供批量显隐（All visible / All invisible）。
 - 设置列 alias。
 - 新建表达式列。
 - 维护 pinned IDs。
@@ -138,6 +139,8 @@ easylogger view <root>
 - alias 不允许重名；冲突时禁止保存并报错。
 - hidden 列仍可被表达式列引用。
 - 编辑未保存时离开页面，需要提示（unsaved changes warning）。
+- pinned IDs 文本输入需支持多行换行编辑，不应在输入过程中吞掉换行。
+- 页面在宽屏下应保持自适应布局，避免固定窄宽度导致大量留白。
 
 ## 7. View File Schema (MVP Draft)
 ```json

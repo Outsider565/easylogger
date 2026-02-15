@@ -115,7 +115,7 @@ def test_frontend_save_view_persists_column_configuration(frontend_env, page) ->
     loss_row.locator("input[placeholder='alias']").fill("Loss Score")
 
     step_row = page.locator(".column-row", has=page.locator("span.column-name", has_text="step"))
-    step_row.get_by_role("checkbox").click()
+    step_row.locator("input[type='checkbox']").evaluate("element => element.click()")
 
     page.get_by_role("button", name="Add computed column").click()
     computed_rows = page.locator(".computed-row")
@@ -168,3 +168,37 @@ def test_frontend_beforeunload_warning_logic_when_dirty(frontend_env, page) -> N
         """
     )
     assert dirty_state_blocks is True
+
+
+def test_frontend_bulk_visibility_and_drag_reorder(frontend_env, page) -> None:
+    _open_app(page, frontend_env["base_url"])
+
+    page.get_by_role("button", name="All invisible").click()
+    expect(page.locator("th")).to_have_count(0)
+
+    page.get_by_role("button", name="All visible").click()
+    visible_headers = page.locator("th").all_inner_texts()
+    assert "path" in visible_headers
+    assert "loss" in visible_headers
+    assert "step" in visible_headers
+
+    loss_row = page.locator(".column-row", has=page.locator("span.column-name", has_text="loss"))
+    path_row = page.locator(".column-row", has=page.locator("span.column-name", has_text="path"))
+    loss_row.locator(".drag-handle").drag_to(path_row.locator(".drag-handle"))
+
+    expect(page.locator("th").first).to_have_text("loss")
+
+    page.get_by_role("button", name="Save View").click()
+    persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
+    assert persisted["columns"]["order"][0] == "loss"
+
+
+def test_frontend_pinned_ids_supports_multiline_input(frontend_env, page) -> None:
+    _open_app(page, frontend_env["base_url"])
+
+    pinned = page.locator("textarea")
+    pinned.fill("logs/a.scaler.json\n")
+    assert pinned.input_value().endswith("\n")
+
+    pinned.type("logs/b.scaler.json")
+    assert "logs/a.scaler.json\nlogs/b.scaler.json" in pinned.input_value()
