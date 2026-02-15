@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import threading
 import time
@@ -113,6 +114,7 @@ def test_frontend_save_view_persists_column_configuration(frontend_env, page) ->
 
     loss_row = page.locator(".column-row", has=page.locator("span.column-name", has_text="loss"))
     loss_row.locator("input[placeholder='alias']").fill("Loss Score")
+    loss_row.locator("input.format-input").fill("{d:.3f}")
 
     step_row = page.locator(".column-row", has=page.locator("span.column-name", has_text="step"))
     step_row.locator("input[type='checkbox']").evaluate("element => element.click()")
@@ -127,6 +129,7 @@ def test_frontend_save_view_persists_column_configuration(frontend_env, page) ->
 
     expect(page.locator("text=Unsaved changes")).to_have_count(0)
     expect(page.locator("th", has_text="Loss Score")).to_have_count(1)
+    expect(page.locator("td", has_text="0.200")).to_have_count(1)
 
     headers = page.locator("th").all_inner_texts()
     assert "step" not in headers
@@ -134,6 +137,7 @@ def test_frontend_save_view_persists_column_configuration(frontend_env, page) ->
 
     persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
     assert persisted["columns"]["alias"]["loss"] == "Loss Score"
+    assert persisted["columns"]["format"]["loss"] == "{d:.3f}"
     assert "step" in persisted["columns"]["hidden"]
     assert any(
         item["name"] == "double_step" and item["expr"] == 'row["step"] * 2'
@@ -223,7 +227,103 @@ def test_frontend_table_sort_and_pin_controls(frontend_env, page) -> None:
     assert first_two_paths == ["logs/c.scaler.json", "logs/b.scaler.json"]
 
     page.get_by_role("button", name="Save View").click()
+    expect(page.locator("text=Unsaved changes")).to_have_count(0)
     persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
     assert persisted["rows"]["pinned_ids"][:2] == ["logs/c.scaler.json", "logs/b.scaler.json"]
     assert persisted["rows"]["sort"]["by"] == "step"
     assert persisted["rows"]["sort"]["direction"] == "desc"
+
+
+def test_frontend_writes_multiple_formats_and_renders_them(frontend_env, page) -> None:
+    _open_app(page, frontend_env["base_url"])
+
+    step_row = page.locator(".column-row", has=page.locator("span.column-name", has_text=re.compile(r"^step$")))
+    loss_row = page.locator(".column-row", has=page.locator("span.column-name", has_text=re.compile(r"^loss$")))
+
+    step_row.locator("input.format-input").fill("{d:04}")
+    loss_row.locator("input.format-input").fill("{d:.2%}")
+
+    page.get_by_role("button", name="Save View").click()
+    expect(page.locator("text=Unsaved changes")).to_have_count(0)
+
+    rendered = page.evaluate(
+        """
+        () => {
+          const headers = Array.from(document.querySelectorAll('thead th')).map((th) => th.innerText.trim());
+          const stepIndex = headers.findIndex((h) => h.startsWith('step'));
+          const lossIndex = headers.findIndex((h) => h.startsWith('loss'));
+          const rows = Array.from(document.querySelectorAll('tbody tr'));
+          const target = rows.find((row) => {
+            const cells = row.querySelectorAll('td');
+            return cells.length > 1 && cells[1].innerText.trim() === 'logs/a.scaler.json';
+          });
+          if (!target) return { step: null, loss: null };
+          const cells = target.querySelectorAll('td');
+          return {
+            step: stepIndex >= 0 ? cells[stepIndex].innerText.trim() : null,
+            loss: lossIndex >= 0 ? cells[lossIndex].innerText.trim() : null,
+          };
+        }
+        """
+    )
+    assert rendered["step"] == "0001"
+    assert rendered["loss"] == "20.00%"
+
+    persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
+    assert persisted["columns"]["format"]["step"] == "{d:04}"
+    assert persisted["columns"]["format"]["loss"] == "{d:.2%}"
+
+    step_row.locator("input.format-input").fill("")
+    page.get_by_role("button", name="Save View").click()
+
+    persisted_after_clear = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
+    assert "step" not in persisted_after_clear["columns"]["format"]
+
+
+def test_frontend_format_preview_updates_without_manual_refresh(frontend_env, page) -> None:
+    _open_app(page, frontend_env["base_url"])
+
+    step_row = page.locator(".column-row", has=page.locator("span.column-name", has_text=re.compile(r"^step$")))
+    step_row.locator("input.format-input").fill("{d:04}")
+
+    expect(page.locator("text=Unsaved changes")).to_have_count(1)
+    expect(page.locator("td", has_text="0001")).to_have_count(1)
+
+
+def test_frontend_format_help_and_numeric_string_format(frontend_env, page) -> None:
+    _write(frontend_env["root"] / "logs" / "b.scaler.json", '{"step": 2, "latency_ms": "12.7", "loss": 0.1}')
+    _open_app(page, frontend_env["base_url"])
+    page.get_by_role("button", name="Refresh").click()
+
+    help_dot = page.locator(".help-dot")
+    assert "Python format string" in (help_dot.get_attribute("title") or "")
+
+    latency_row = page.locator(".column-row", has=page.locator("span.column-name", has_text=re.compile(r"^latency_ms$")))
+    latency_row.locator("input.format-input").fill("{d:.1f}ms")
+    expect(page.locator("td", has_text="12.7ms")).to_have_count(1)
+
+
+def test_frontend_can_create_rename_and_switch_views(frontend_env, page) -> None:
+    _open_app(page, frontend_env["base_url"])
+
+    page.locator(".view-tab-add").click()
+    modal = page.locator(".modal-card", has=page.locator("text=Create View"))
+    modal.locator("input").fill("exp2")
+    modal.locator("select").select_option("demo")
+    modal.get_by_role("button", name="Create").click()
+
+    expect(page.locator(".view-tab", has=page.get_by_role("button", name="exp2"))).to_have_count(1)
+    assert (frontend_env["root"] / ".easylogger" / "views" / "exp2.json").exists()
+
+    new_tab = page.locator(".view-tab", has=page.get_by_role("button", name="exp2"))
+    new_tab.locator(".view-tab-rename").click()
+    rename_modal = page.locator(".modal-card", has=page.locator("text=Rename View"))
+    rename_modal.locator("input").fill("renamed")
+    rename_modal.get_by_role("button", name="Rename").click()
+
+    expect(page.locator(".view-tab", has=page.get_by_role("button", name="renamed"))).to_have_count(1)
+    assert (frontend_env["root"] / ".easylogger" / "views" / "renamed.json").exists()
+    assert not (frontend_env["root"] / ".easylogger" / "views" / "exp2.json").exists()
+
+    page.get_by_role("button", name="demo").click()
+    expect(page.locator(".meta", has_text="View: demo")).to_have_count(1)

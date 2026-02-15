@@ -113,12 +113,17 @@ easylogger view <root>
 ### 6.2 Refresh 机制
 - 不自动刷新。
 - 用户手动点击 Refresh 才重新扫描。
+- Refresh 的唯一职责是触发“重新扫描文件系统”；其余 UI 操作不应要求用户手动 Refresh。
 
 ### 6.3 View 编辑能力
+- 顶部提供 view 标签栏（类似浏览器 tab），可切换当前 view。
+- 标签栏最右侧提供 `+` 新建 view，支持从已有 view 复制配置（通过下拉选择源 view）。
+- 每个 view 支持重命名。
 - 调整列顺序（支持拖拽排序）。
 - 隐藏/显示列。
 - 提供批量显隐（All visible / All invisible）。
 - 设置列 alias。
+- 设置列显示格式（format）。
 - 新建表达式列。
 - 在表格中对任意行执行 Pin / Unpin（不再通过独立 Rows 面板配置）。
 - 对已 pinned 的行支持拖拽调整 pinned 内部顺序。
@@ -130,6 +135,14 @@ easylogger view <root>
 - 列引用语法：`row["col_name"]`。
 - 可使用 Python 内置能力（MVP 不做安全限制）。
 - 计算失败时，该单元格展示错误字符串。
+
+### 6.4.1 列格式规则（新增）
+- 每列可选配置 `format`，语法为 Python `str.format` 模板，变量名固定为 `d`。
+- 示例：`"{d:02}"`、`"{d:.3f}"`、`"{d:,}"`。
+- 格式应用仅影响展示值，不影响排序逻辑（排序仍基于原始值）。
+- 若格式执行失败，该单元格展示 `FORMAT_ERROR: ...`。
+- 修改格式模板后，应在当前已扫描数据上实时预览生效（无需手动 Refresh）。
+- `Format` 列标题在 hover 时应显示帮助提示，说明语法与示例。
 
 ### 6.5 行排序规则
 - `pinned_ids` 对应行固定在最前。
@@ -154,6 +167,10 @@ easylogger view <root>
     "hidden": ["note"],
     "alias": {
       "lr": "learning_rate"
+    },
+    "format": {
+      "step": "{d:04}",
+      "loss": "{d:.3f}"
     },
     "computed": [
       {
@@ -200,6 +217,7 @@ easylogger view <root>
 2. 可通过 `easylogger view <root> --name ...` 打开网页并手动 Refresh 数据。
 3. 可在网页中编辑并保存列顺序、hidden、alias、表达式列。
 4. 可配置并持久化 `pinned_ids` 与普通排序规则。
+5. Web 支持多 view 标签切换、复制新建和重命名，并正确持久化到 view 文件。
 
 ## 10. Open Questions (Post-MVP)
 - 是否支持多 regex 规则组合。
@@ -214,4 +232,8 @@ easylogger view <root>
   - `Save View` 后配置落盘。
   - `unsaved changes` 状态下离开页面提示逻辑。
   - 列配置（alias / hidden / computed）可编辑并持久化。
+  - 列格式配置（format）可编辑并持久化，并在表格内正确显示。
+  - 至少覆盖多种格式模板（补零、浮点精度、百分比、千分位）及格式错误场景。
+  - `Format` hover 帮助提示可见。
+  - view 标签栏的切换、复制新建、重命名流程可生效并持久化。
   - 表格内的 Pin / Unpin、pinned 拖拽重排、表头排序交互可生效并持久化。

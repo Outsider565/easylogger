@@ -26,6 +26,7 @@ def apply_view(records: Sequence[dict[str, Any]], view: ViewConfig) -> TableResu
     visible_columns = [column for column in ordered_columns if column not in hidden_set]
 
     sorted_rows = _sort_rows(rows, view)
+    _apply_display_formats(sorted_rows, view)
     return TableResult(all_columns=ordered_columns, visible_columns=visible_columns, rows=sorted_rows)
 
 
@@ -107,6 +108,35 @@ def _sort_rows(rows: list[dict[str, Any]], view: ViewConfig) -> list[dict[str, A
         other_rows.sort(key=lambda row: _sortable_value(row.get(sort_field)), reverse=reverse)
 
     return pinned_rows + other_rows
+
+
+def _apply_display_formats(rows: list[dict[str, Any]], view: ViewConfig) -> None:
+    for column_name, template in view.columns.format.items():
+        if not isinstance(template, str) or not template:
+            continue
+        for row in rows:
+            if column_name not in row:
+                continue
+            value = row[column_name]
+            if value is None:
+                continue
+            try:
+                row[column_name] = template.format(d=_coerce_format_value(value))
+            except Exception as exc:
+                row[column_name] = f"FORMAT_ERROR: {exc}"
+
+
+def _coerce_format_value(value: Any) -> Any:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if _NUMERIC_RE.match(stripped):
+            if "." not in stripped:
+                try:
+                    return int(stripped)
+                except ValueError:
+                    return float(stripped)
+            return float(stripped)
+    return value
 
 
 def _sortable_value(value: Any) -> tuple[int, Any]:

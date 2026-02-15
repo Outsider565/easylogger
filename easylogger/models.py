@@ -22,6 +22,7 @@ class ColumnConfig(BaseModel):
     order: list[str] = Field(default_factory=lambda: ["path"])
     hidden: list[str] = Field(default_factory=list)
     alias: dict[str, str] = Field(default_factory=dict)
+    format: dict[str, str] = Field(default_factory=dict)
     computed: list[ComputedColumn] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -75,4 +76,15 @@ class ViewConfig(BaseModel):
 
 
 class ScanRequest(BaseModel):
+    view_name: str | None = None
     view: ViewConfig | None = None
+
+
+class CreateViewRequest(BaseModel):
+    name: str
+    from_name: str
+
+
+class RenameViewRequest(BaseModel):
+    old_name: str
+    new_name: str

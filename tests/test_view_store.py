@@ -5,7 +5,16 @@ from pathlib import Path
 import pytest
 
 from easylogger.models import ViewConfig
-from easylogger.view_store import ViewNotFoundError, default_view, load_view, save_view, view_path
+from easylogger.view_store import (
+    ViewNotFoundError,
+    create_view_from,
+    default_view,
+    list_views,
+    load_view,
+    rename_view,
+    save_view,
+    view_path,
+)
 
 
 def test_save_and_load_view_roundtrip(tmp_path: Path) -> None:
@@ -17,6 +26,7 @@ def test_save_and_load_view_roundtrip(tmp_path: Path) -> None:
 
     loaded = load_view(tmp_path, "demo")
     assert loaded.model_dump() == view.model_dump()
+    assert loaded.columns.format == {}
 
 
 def test_load_missing_view_has_actionable_message(tmp_path: Path) -> None:
@@ -44,3 +54,14 @@ def test_alias_names_must_be_unique() -> None:
                 "rows": {"pinned_ids": [], "sort": {"by": None, "direction": "asc"}},
             }
         )
+
+
+def test_create_and_rename_view(tmp_path: Path) -> None:
+    save_view(tmp_path, default_view("base", r".*"))
+    created = create_view_from(tmp_path, "copy", "base")
+    assert created.name == "copy"
+    assert sorted(list_views(tmp_path)) == ["base", "copy"]
+
+    renamed = rename_view(tmp_path, "copy", "renamed")
+    assert renamed.name == "renamed"
+    assert sorted(list_views(tmp_path)) == ["base", "renamed"]

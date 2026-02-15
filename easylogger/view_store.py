@@ -10,12 +10,28 @@ class ViewNotFoundError(FileNotFoundError):
     pass
 
 
+def _normalize_name(name: str) -> str:
+    normalized = name.strip()
+    if not normalized:
+        raise ValueError("View name cannot be empty.")
+    if "/" in normalized or "\\" in normalized:
+        raise ValueError("View name cannot include path separators.")
+    return normalized
+
+
 def views_dir(root: str | Path) -> Path:
     return Path(root).expanduser().resolve() / ".easylogger" / "views"
 
 
 def view_path(root: str | Path, name: str) -> Path:
-    return views_dir(root) / f"{name}.json"
+    return views_dir(root) / f"{_normalize_name(name)}.json"
+
+
+def list_views(root: str | Path) -> list[str]:
+    base = views_dir(root)
+    if not base.exists():
+        return []
+    return sorted(path.stem for path in base.glob("*.json"))
 
 
 def default_view(name: str, pattern: str) -> ViewConfig:
@@ -27,6 +43,7 @@ def default_view(name: str, pattern: str) -> ViewConfig:
                 "order": ["path"],
                 "hidden": [],
                 "alias": {},
+                "format": {},
                 "computed": [],
             },
             "rows": {
@@ -64,3 +81,37 @@ def load_view(root: str | Path, name: str) -> ViewConfig:
         raise ValueError(f"Failed to read view file: {target} ({exc})") from exc
 
     return ViewConfig.model_validate(payload)
+
+
+def create_view_from(root: str | Path, name: str, from_name: str) -> ViewConfig:
+    new_name = _normalize_name(name)
+    source_name = _normalize_name(from_name)
+    if view_path(root, new_name).exists():
+        raise ValueError(f"View '{new_name}' already exists.")
+
+    source = load_view(root, source_name)
+    copied = source.model_copy(deep=True)
+    copied.name = new_name
+    save_view(root, copied)
+    return copied
+
+
+def rename_view(root: str | Path, old_name: str, new_name: str) -> ViewConfig:
+    old_normalized = _normalize_name(old_name)
+    new_normalized = _normalize_name(new_name)
+    if old_normalized == new_normalized:
+        return load_view(root, old_normalized)
+
+    old_path = view_path(root, old_normalized)
+    if not old_path.exists():
+        raise ViewNotFoundError(f"View '{old_normalized}' does not exist.")
+
+    new_path = view_path(root, new_normalized)
+    if new_path.exists():
+        raise ValueError(f"View '{new_normalized}' already exists.")
+
+    view = load_view(root, old_normalized)
+    view.name = new_normalized
+    save_view(root, view)
+    old_path.unlink(missing_ok=True)
+    return view

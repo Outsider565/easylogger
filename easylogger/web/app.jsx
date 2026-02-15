@@ -51,8 +51,11 @@
 
       function App() {
         const [meta, setMeta] = useState({ root: "", view_name: "" });
+        const [viewNames, setViewNames] = useState([]);
+        const [activeViewName, setActiveViewName] = useState("");
         const [view, setView] = useState(null);
         const viewRef = useRef(null);
+        const renderTimerRef = useRef(null);
         const [scan, setScan] = useState({ rows: [], columns: { all: [], visible: [], alias: {} }, summary: null, warnings: [] });
         const [draggingColumn, setDraggingColumn] = useState(null);
         const [dragOverColumn, setDragOverColumn] = useState(null);
@@ -63,6 +66,11 @@
         const [dirty, setDirty] = useState(false);
         const [error, setError] = useState("");
         const [message, setMessage] = useState("");
+        const [showCreateModal, setShowCreateModal] = useState(false);
+        const [createViewName, setCreateViewName] = useState("");
+        const [createFromName, setCreateFromName] = useState("");
+        const [renameTarget, setRenameTarget] = useState("");
+        const [renameValue, setRenameValue] = useState("");
 
         useEffect(() => {
           const handler = (event) => {
@@ -83,6 +91,15 @@
         useEffect(() => {
           viewRef.current = view;
         }, [view]);
+
+        useEffect(() => {
+          return () => {
+            if (renderTimerRef.current) {
+              clearTimeout(renderTimerRef.current);
+              renderTimerRef.current = null;
+            }
+          };
+        }, []);
 
         const allColumns = useMemo(() => {
           if (!view) {
@@ -142,6 +159,34 @@
           return [...pinnedRows, ...otherRows];
         }, [scan.rows, view]);
 
+        async function fetchViewList() {
+          const resp = await fetch("/api/views");
+          if (!resp.ok) {
+            throw new Error(await resp.text());
+          }
+          const payload = await resp.json();
+          const names = Array.isArray(payload.views) ? payload.views : [];
+          setViewNames(names);
+          return { names, active: payload.active || "" };
+        }
+
+        async function loadViewByName(name, { rescan = false } = {}) {
+          const resp = await fetch(`/api/views/${encodeURIComponent(name)}`);
+          if (!resp.ok) {
+            throw new Error(await resp.text());
+          }
+          const payload = await resp.json();
+          setView(payload);
+          viewRef.current = payload;
+          setActiveViewName(payload.name);
+          if (rescan) {
+            await runScan(payload, payload.name);
+          } else {
+            await runRender(payload, payload.name);
+          }
+          setDirty(false);
+        }
+
         async function loadInitial() {
           setLoading(true);
           setError("");
@@ -154,16 +199,18 @@
             const metaPayload = await metaResp.json();
             setMeta(metaPayload);
 
-            const viewResp = await fetch("/api/view");
-            if (!viewResp.ok) {
-              throw new Error(await viewResp.text());
-            }
-            const viewPayload = await viewResp.json();
-            setView(viewPayload);
-            viewRef.current = viewPayload;
+            const listPayload = await fetchViewList();
+            const fallback = listPayload.names.length ? listPayload.names[0] : "";
+            const initialName =
+              listPayload.active ||
+              metaPayload.view_name ||
+              fallback;
 
-            await runScan(viewPayload);
-            setDirty(false);
+            if (!initialName) {
+              throw new Error("No views found. Please create a view first.");
+            }
+
+            await loadViewByName(initialName, { rescan: true });
           } catch (err) {
             setError(String(err));
           } finally {
@@ -171,7 +218,7 @@
           }
         }
 
-        async function runScan(activeView = view) {
+        async function runScan(activeView = view, requestViewName = activeViewName) {
           if (!activeView) {
             return;
           }
@@ -180,7 +227,7 @@
           const resp = await fetch("/api/scan", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ view: activeView }),
+            body: JSON.stringify({ view_name: requestViewName, view: activeView }),
           });
           if (!resp.ok) {
             throw new Error(await resp.text());
@@ -189,10 +236,47 @@
           setScan(payload);
         }
 
+        async function runRender(activeView = view, requestViewName = activeViewName) {
+          if (!activeView) {
+            return;
+          }
+          setMessage("");
+          setError("");
+          const resp = await fetch("/api/render", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ view_name: requestViewName, view: activeView }),
+          });
+          if (!resp.ok) {
+            throw new Error(await resp.text());
+          }
+          const payload = await resp.json();
+          setScan((prev) => ({
+            ...prev,
+            ...payload,
+            summary: payload.summary,
+          }));
+        }
+
+        function scheduleRender(activeView = null) {
+          if (renderTimerRef.current) {
+            clearTimeout(renderTimerRef.current);
+          }
+          renderTimerRef.current = setTimeout(async () => {
+            try {
+              await runRender(activeView || viewRef.current);
+            } catch (err) {
+              setError(String(err));
+            } finally {
+              renderTimerRef.current = null;
+            }
+          }, 180);
+        }
+
         async function refresh() {
           setLoading(true);
           try {
-            await runScan(view);
+            await runScan(view, activeViewName);
           } catch (err) {
             setError(String(err));
           } finally {
@@ -209,7 +293,7 @@
           setMessage("");
           setError("");
           try {
-            const resp = await fetch("/api/view", {
+            const resp = await fetch(`/api/views/${encodeURIComponent(activeViewName)}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(activeView),
@@ -222,11 +306,111 @@
             viewRef.current = saved;
             setDirty(false);
             setMessage("View saved.");
-            await runScan(saved);
+            await runRender(saved, activeViewName);
+            await fetchViewList();
           } catch (err) {
             setError(String(err));
           } finally {
             setSaving(false);
+          }
+        }
+
+        async function switchView(name) {
+          if (!name || name === activeViewName) {
+            return;
+          }
+          if (dirty && !window.confirm("You have unsaved changes. Switch view anyway?")) {
+            return;
+          }
+
+          setLoading(true);
+          setError("");
+          setMessage("");
+          try {
+            await loadViewByName(name, { rescan: false });
+          } catch (err) {
+            setError(String(err));
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        function openCreateDialog() {
+          if (!viewNames.length) {
+            return;
+          }
+          setCreateViewName("");
+          setCreateFromName(activeViewName || viewNames[0]);
+          setShowCreateModal(true);
+        }
+
+        async function createViewFromExisting() {
+          const newName = createViewName.trim();
+          if (!newName) {
+            setError("New view name cannot be empty.");
+            return;
+          }
+
+          setError("");
+          setMessage("");
+          try {
+            const resp = await fetch("/api/views/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: newName, from_name: createFromName || activeViewName }),
+            });
+            if (!resp.ok) {
+              throw new Error(await resp.text());
+            }
+            const created = await resp.json();
+            setShowCreateModal(false);
+            await fetchViewList();
+            await loadViewByName(created.name, { rescan: false });
+            setMessage(`Created view '${created.name}'.`);
+          } catch (err) {
+            setError(String(err));
+          }
+        }
+
+        function openRenameDialog(name) {
+          setRenameTarget(name);
+          setRenameValue(name);
+        }
+
+        async function renameViewAction() {
+          const nextName = renameValue.trim();
+          if (!renameTarget) {
+            return;
+          }
+          if (!nextName) {
+            setError("New view name cannot be empty.");
+            return;
+          }
+          if (renameTarget === activeViewName && dirty && !window.confirm("You have unsaved changes. Rename anyway?")) {
+            return;
+          }
+
+          setError("");
+          setMessage("");
+          try {
+            const resp = await fetch("/api/views/rename", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ old_name: renameTarget, new_name: nextName }),
+            });
+            if (!resp.ok) {
+              throw new Error(await resp.text());
+            }
+            const renamed = await resp.json();
+            setRenameTarget("");
+            setRenameValue("");
+            await fetchViewList();
+            if (renameTarget === activeViewName) {
+              await loadViewByName(renamed.name, { rescan: false });
+            }
+            setMessage(`Renamed view to '${renamed.name}'.`);
+          } catch (err) {
+            setError(String(err));
           }
         }
 
@@ -284,6 +468,20 @@
           });
         }
 
+        function setFormat(columnName, formatValue) {
+          mutateView((draft) => {
+            if (!draft.columns.format) {
+              draft.columns.format = {};
+            }
+            if (!formatValue.trim()) {
+              delete draft.columns.format[columnName];
+              return;
+            }
+            draft.columns.format[columnName] = formatValue;
+          });
+          scheduleRender();
+        }
+
         function setAllVisibility(visible) {
           mutateView((draft) => {
             draft.columns.hidden = visible ? [] : [...allColumns];
@@ -294,18 +492,21 @@
           mutateView((draft) => {
             draft.columns.computed.push({ name: "", expr: "" });
           });
+          scheduleRender();
         }
 
         function removeComputed(index) {
           mutateView((draft) => {
             draft.columns.computed.splice(index, 1);
           });
+          scheduleRender();
         }
 
         function updateComputed(index, field, value) {
           mutateView((draft) => {
             draft.columns.computed[index][field] = value;
           });
+          scheduleRender();
         }
 
         function onColumnDragStart(event, column) {
@@ -337,6 +538,7 @@
             }
             draft.rows.pinned_ids = pinnedIds;
           });
+          scheduleRender();
         }
 
         function reorderPinnedRows(draggedPath, targetPath) {
@@ -355,6 +557,7 @@
             pinnedIds.splice(toIndex, 0, item);
             draft.rows.pinned_ids = pinnedIds;
           });
+          scheduleRender();
         }
 
         function toggleSortByColumn(column) {
@@ -366,6 +569,7 @@
             draft.rows.sort.by = column;
             draft.rows.sort.direction = "asc";
           });
+          scheduleRender();
         }
 
         function sortIndicatorFor(column) {
@@ -387,11 +591,34 @@
 
         return (
           <div className="app">
+            <div className="panel tab-panel">
+              <div className="tab-strip">
+                {viewNames.map((name) => (
+                  <div className={`view-tab ${name === activeViewName ? "active" : ""}`} key={`tab-${name}`}>
+                    <button type="button" className="view-tab-main" onClick={() => switchView(name)}>
+                      {name}
+                    </button>
+                    <button
+                      type="button"
+                      className="view-tab-rename"
+                      title="Rename view"
+                      onClick={() => openRenameDialog(name)}
+                    >
+                      ✎
+                    </button>
+                  </div>
+                ))}
+                <button type="button" className="view-tab-add" title="Create view" onClick={openCreateDialog}>
+                  +
+                </button>
+              </div>
+            </div>
+
             <div className="panel toolbar">
               <div>
                 <div><strong>EasyLogger</strong></div>
                 <div className="meta">Root: {meta.root}</div>
-                <div className="meta">View: {meta.view_name}</div>
+                <div className="meta">View: {activeViewName || meta.view_name}</div>
               </div>
               <div className="actions">
                 <button onClick={refresh} disabled={loading}>Refresh</button>
@@ -431,6 +658,15 @@
                   <span>#</span>
                   <span>Column</span>
                   <span>Alias</span>
+                  <span className="format-header">
+                    Format
+                    <span
+                      className="help-dot"
+                      title={"Python format string using variable d. Examples: {d:04}, {d:.2f}, {d:.1%}, {d:,}. Leave blank for no formatting."}
+                    >
+                      ?
+                    </span>
+                  </span>
                   <span>Visible</span>
                 </div>
                 {allColumns.map((column) => (
@@ -467,6 +703,12 @@
                       value={view.columns.alias[column] || ""}
                       placeholder="alias"
                       onChange={(event) => setAlias(column, event.target.value)}
+                    />
+                    <input
+                      value={(view.columns.format && view.columns.format[column]) || ""}
+                      className="format-input"
+                      placeholder=""
+                      onChange={(event) => setFormat(column, event.target.value)}
                     />
                     <label className="column-visibility">
                       <input
@@ -596,6 +838,48 @@
                 </div>
               </div>
             </div>
+
+            {showCreateModal ? (
+              <div className="modal-backdrop">
+                <div className="modal-card">
+                  <h3 className="section-title">Create View</h3>
+                  <div className="hint">New view name</div>
+                  <input value={createViewName} onChange={(event) => setCreateViewName(event.target.value)} />
+                  <div className="hint">Copy from</div>
+                  <select value={createFromName} onChange={(event) => setCreateFromName(event.target.value)}>
+                    {viewNames.map((name) => (
+                      <option key={`from-${name}`} value={name}>{name}</option>
+                    ))}
+                  </select>
+                  <div className="modal-actions">
+                    <button type="button" onClick={() => setShowCreateModal(false)}>Cancel</button>
+                    <button type="button" className="primary" onClick={createViewFromExisting}>Create</button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {renameTarget ? (
+              <div className="modal-backdrop">
+                <div className="modal-card">
+                  <h3 className="section-title">Rename View</h3>
+                  <div className="hint">Current: {renameTarget}</div>
+                  <input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenameTarget("");
+                        setRenameValue("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button type="button" className="primary" onClick={renameViewAction}>Rename</button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         );
       }
