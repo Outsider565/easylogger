@@ -234,6 +234,50 @@ def test_frontend_table_sort_and_pin_controls(frontend_env, page) -> None:
     assert persisted["rows"]["sort"]["direction"] == "desc"
 
 
+def test_frontend_row_alias_can_be_saved_and_cleared(frontend_env, page) -> None:
+    _open_app(page, frontend_env["base_url"])
+
+    row = page.locator("tbody tr", has=page.locator("td", has_text="logs/a.scaler.json"))
+    alias_input = row.locator("input.row-alias-input")
+    assert alias_input.input_value() == ""
+
+    alias_input.fill("baseline")
+    page.get_by_role("button", name="Save View").click()
+    expect(page.locator("text=Unsaved changes")).to_have_count(0)
+
+    persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
+    assert persisted["rows"]["alias"]["logs/a.scaler.json"] == "baseline"
+
+    alias_input.fill("")
+    page.get_by_role("button", name="Save View").click()
+    persisted_after_clear = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
+    assert "logs/a.scaler.json" not in persisted_after_clear["rows"]["alias"]
+
+
+def test_frontend_pattern_editor_persists_regex_and_keeps_alias_for_filtered_rows(frontend_env, page) -> None:
+    _write(frontend_env["root"] / "logs" / "b.scaler.json", '{"step": 2, "loss": 0.1, "note": "second"}')
+    _open_app(page, frontend_env["base_url"])
+
+    row_a = page.locator("tbody tr", has=page.locator("td", has_text="logs/a.scaler.json"))
+    row_a.locator("input.row-alias-input").fill("baseline")
+    page.get_by_role("button", name="Save View").click()
+    expect(page.locator("text=Unsaved changes")).to_have_count(0)
+
+    page.locator("input.pattern-input").fill(r"^logs/b\.scaler\.json$")
+    page.get_by_role("button", name="Refresh").click()
+
+    expect(page.locator("tbody tr")).to_have_count(1)
+    row_b = page.locator("tbody tr", has=page.locator("td", has_text="logs/b.scaler.json"))
+    assert row_b.locator("input.row-alias-input").input_value() == ""
+
+    page.get_by_role("button", name="Save View").click()
+    expect(page.locator("text=Unsaved changes")).to_have_count(0)
+    persisted = json.loads(frontend_env["view_file"].read_text(encoding="utf-8"))
+    assert persisted["pattern"] == r"^logs/b\.scaler\.json$"
+    assert persisted["rows"]["alias"]["logs/a.scaler.json"] == "baseline"
+    assert "logs/b.scaler.json" not in persisted["rows"]["alias"]
+
+
 def test_frontend_writes_multiple_formats_and_renders_them(frontend_env, page) -> None:
     _open_app(page, frontend_env["base_url"])
 

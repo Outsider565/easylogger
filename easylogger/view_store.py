@@ -48,6 +48,7 @@ def default_view(name: str, pattern: str) -> ViewConfig:
             },
             "rows": {
                 "pinned_ids": [],
+                "alias": {},
                 "sort": {
                     "by": None,
                     "direction": "asc",

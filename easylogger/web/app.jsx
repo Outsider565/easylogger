@@ -468,6 +468,12 @@
           });
         }
 
+        function setPattern(nextPattern) {
+          mutateView((draft) => {
+            draft.pattern = nextPattern;
+          });
+        }
+
         function setFormat(columnName, formatValue) {
           mutateView((draft) => {
             if (!draft.columns.format) {
@@ -539,6 +545,23 @@
             draft.rows.pinned_ids = pinnedIds;
           });
           scheduleRender();
+        }
+
+        function setRowAlias(path, aliasValue) {
+          if (!path) {
+            return;
+          }
+
+          mutateView((draft) => {
+            if (!draft.rows.alias) {
+              draft.rows.alias = {};
+            }
+            if (!aliasValue.trim()) {
+              delete draft.rows.alias[path];
+              return;
+            }
+            draft.rows.alias[path] = aliasValue;
+          });
         }
 
         function reorderPinnedRows(draggedPath, targetPath) {
@@ -615,10 +638,21 @@
             </div>
 
             <div className="panel toolbar">
-              <div>
+              <div className="toolbar-left">
                 <div><strong>EasyLogger</strong></div>
                 <div className="meta">Root: {meta.root}</div>
                 <div className="meta">View: {activeViewName || meta.view_name}</div>
+                <div className="pattern-editor">
+                  <label className="hint" htmlFor="pattern-input">Pattern (regex)</label>
+                  <input
+                    id="pattern-input"
+                    className="pattern-input"
+                    value={view.pattern || ""}
+                    placeholder=".*\\.scaler\\.json$"
+                    onChange={(event) => setPattern(event.target.value)}
+                  />
+                  <div className="hint">Update regex, then click Refresh to rescan files.</div>
+                </div>
               </div>
               <div className="actions">
                 <button onClick={refresh} disabled={loading}>Refresh</button>
@@ -818,6 +852,12 @@
                                   ⋮⋮
                                 </span>
                               ) : null}
+                              <input
+                                className="row-alias-input"
+                                value={(view.rows?.alias && view.rows.alias[rowPath]) || ""}
+                                placeholder="alias"
+                                onChange={(event) => setRowAlias(rowPath, event.target.value)}
+                              />
                             </div>
                           </td>
                           {visibleColumns.map((column) => {

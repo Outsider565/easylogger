@@ -44,6 +44,7 @@ class SortConfig(BaseModel):
 
 class RowConfig(BaseModel):
     pinned_ids: list[str] = Field(default_factory=list)
+    alias: dict[str, str] = Field(default_factory=dict)
     sort: SortConfig = Field(default_factory=SortConfig)
 
 
@@ -68,11 +69,12 @@ class ViewConfig(BaseModel):
     @field_validator("pattern")
     @classmethod
     def _validate_pattern(cls, value: str) -> str:
+        text = value.strip()
         try:
-            re.compile(value)
+            re.compile(text)
         except re.error as exc:
             raise ValueError(f"Invalid regex pattern: {exc}") from exc
-        return value
+        return text
 
 
 class ScanRequest(BaseModel):

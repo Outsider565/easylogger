@@ -36,6 +36,7 @@ View 定义“如何展示数据”，包括：
 - 列别名（alias）
 - 表达式列（单行 Python 表达式）
 - 行置顶（pinned IDs）
+- 行别名（row alias）
 - 其余行排序规则
 
 View 与项目绑定，存储在：
@@ -119,6 +120,7 @@ easylogger view <root>
 - 顶部提供 view 标签栏（类似浏览器 tab），可切换当前 view。
 - 标签栏最右侧提供 `+` 新建 view，支持从已有 view 复制配置（通过下拉选择源 view）。
 - 每个 view 支持重命名。
+- 顶部提供当前 view 的 `pattern`（regex）输入框，可直接编辑。
 - 调整列顺序（支持拖拽排序）。
 - 隐藏/显示列。
 - 提供批量显隐（All visible / All invisible）。
@@ -126,6 +128,7 @@ easylogger view <root>
 - 设置列显示格式（format）。
 - 新建表达式列。
 - 在表格中对任意行执行 Pin / Unpin（不再通过独立 Rows 面板配置）。
+- 每个 row 在 Pin 按钮后提供 alias 输入框（默认空），支持编辑并持久化。
 - 对已 pinned 的行支持拖拽调整 pinned 内部顺序。
 - 在表头点击列名切换排序方向（asc / desc），并显示箭头状态。
 - 保存到 view 文件。
@@ -150,6 +153,12 @@ easylogger view <root>
 - 其余行按指定字段排序。
 - 排序交互来自表头点击；pinned 行不受普通排序影响。
 - 若排序值为字符串数字（如 `"12"`），自动按数值参与排序。
+
+### 6.5.1 行别名规则（新增）
+- 行别名以 `rows.alias` 维护，key 为 row 的 `path`，value 为别名字符串。
+- row alias 仅用于展示辅助，不改变主键（path）和排序逻辑。
+- 默认无值（空字符串）；清空输入后应从配置中移除该 key。
+- 因修改 regex 导致当前扫描结果不包含某些历史 path 时，`rows.alias` 中这些历史 path 的映射不应被自动删除。
 
 ### 6.6 约束
 - alias 不允许重名；冲突时禁止保存并报错。
@@ -183,6 +192,9 @@ easylogger view <root>
     "pinned_ids": [
       "experiments/run_001/result.scaler.json"
     ],
+    "alias": {
+      "experiments/run_001/result.scaler.json": "baseline"
+    },
     "sort": {
       "by": "loss",
       "direction": "asc"
@@ -216,7 +228,7 @@ easylogger view <root>
 1. 可通过 `easylogger create <root> --pattern ... --name ...` 创建 view 并完成首次扫描。
 2. 可通过 `easylogger view <root> --name ...` 打开网页并手动 Refresh 数据。
 3. 可在网页中编辑并保存列顺序、hidden、alias、表达式列。
-4. 可配置并持久化 `pinned_ids` 与普通排序规则。
+4. 可配置并持久化 `pattern(regex)`、`pinned_ids`、`rows.alias` 与普通排序规则。
 5. Web 支持多 view 标签切换、复制新建和重命名，并正确持久化到 view 文件。
 
 ## 10. Open Questions (Post-MVP)
@@ -237,3 +249,5 @@ easylogger view <root>
   - `Format` hover 帮助提示可见。
   - view 标签栏的切换、复制新建、重命名流程可生效并持久化。
   - 表格内的 Pin / Unpin、pinned 拖拽重排、表头排序交互可生效并持久化。
+  - 每行 alias（Pin 后输入框）默认空，可保存到 `rows.alias`，清空后从配置移除。
+  - 顶部 `pattern(regex)` 可编辑并持久化；改 regex 后触发新扫描时，不会自动清理已存在的历史 `rows.alias` 映射。

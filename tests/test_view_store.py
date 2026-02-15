@@ -27,6 +27,7 @@ def test_save_and_load_view_roundtrip(tmp_path: Path) -> None:
     loaded = load_view(tmp_path, "demo")
     assert loaded.model_dump() == view.model_dump()
     assert loaded.columns.format == {}
+    assert loaded.rows.alias == {}
 
 
 def test_load_missing_view_has_actionable_message(tmp_path: Path) -> None:
